@@ -64,16 +64,13 @@ class Keithley2401(object):
         #minimum, maximum or numerical value
         self.send(":source:voltage:range "+sourceRange,v) #0.21V =minimum
         # value of source level. must be < range
-        self.send(":source:voltage:level:immediate:amplitude "+sourceAmplitude,v)
+        self.send(":source:voltage:level:immediate:amplitude " + sourceAmplitude,v)
+
     def check_source(self,v=False):
-        self.send(":source:function:mode?",v)
-        sourceType = self.get()
-        self.send(":source:voltage:mode?",v) #fixed by default
-        sourceMode = self.get()
-        self.send(":source:voltage:range?",v)
-        sourceRange = self.get()
-        self.send(":source:voltage:level?",v)
-        sourceAmplitude = self.get()
+        sourceType = self.call_response(":source:function:mode?",v)
+        sourceMode = self.call_response(":source:voltage:mode?",v)
+        sourceRange = self.call_response(":source:voltage:range?",v)
+        sourceAmplitude = self.call_response(":source:voltage:level?",v)
         return [sourceType,sourceMode,sourceRange,sourceAmplitude]
 
     def measure(self):
