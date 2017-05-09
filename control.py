@@ -1,5 +1,5 @@
-import serial, time, os
-import unittest
+import serial, time, os, unittest
+import numpy,pandas as np,pd
 
 class Keithley2401(object):
     def __init__(self):
@@ -21,6 +21,8 @@ class Keithley2401(object):
             print("serial open:",isOpen)
             print(out)
         return [isOpen,out]
+
+    # helper functions to handle conversions when sending and recieving
     def send(self,message,v=False):
         self.ser.write((message+"\r").encode())
         if v:
@@ -30,6 +32,30 @@ class Keithley2401(object):
         if v:
             print(out.decode("utf-8").rstrip() )
         return out.decode("utf-8").rstrip()
+    def call_response(self,message,v=False):
+        self.send(message)
+        time.sleep(0.1)
+        return self.get()
+    def get_data(self,v=False):
+        d = self.fetch()
+        n=int(len(d.split(','))/5) # should equal arm x trigger
+        data=np.reshape(np.array( [float(x) for x in d.split(',')] ) , (n,5))
+        df = pd.DataFrame(dn,columns=["V", "I", "R", "t", "status"])
+        df.R=df.V/df.I
+        if v:
+            print(df)
+        self.last_data=df
+        return df
+
+
+    # simplifications of simple commands that would be sent to the smu
+    def initiate(self):
+        self.send(":initiate")
+    def fetch(self):
+        return self.call_response(":fetch?")
+
+
+    # direct smu interaction functions. deal with related commands
     def set_source(self,sourceType,sourceMode,sourceRange,sourceAmplitude, v=False):
         #voltage, current or memory
         self.send(":source:function:mode "+sourceType,v)
