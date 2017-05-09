@@ -73,9 +73,45 @@ class Keithley2401(object):
         sourceAmplitude = self.call_response(":source:voltage:level?",v)
         return [sourceType,sourceMode,sourceRange,sourceAmplitude]
 
-    def measure(self):
-        self.send(":measure?")
-        self.get()
+    def set_sense(self,senseType,senseRange,senseCompliance,v=False):
+        assert float(senseCompliance) >= float(senseRange), "your range is beyond your compliance range"
+        self.send(":sense:function '"+senseType+"'")
+        self.send(":sense:"+senseType+":protection "+senseCompliance)
+        self.send(":sense:"+senseType+":range "+senseRange)
+
+    def check_sense(self,v=False):
+        # to check which function is being measured
+        senseType = self.call_response(":sense:function:on?")
+        # determines the range
+        senseRange = self.call_response(":sense:current:range?")
+        #puts an upper limit on the range
+        senseCompliance = self.call_response("sense:current:protection?")
+        hitCompliance = self.call_response("sense:current:protection:tripped?")
+        if hitCompliance == "1":
+            hitCompliance = True
+        else:
+            hitCompliance = False
+        assert hitCompliance == False , "Compliance hit!"
+
+        return [senseType, senseRange, senseCompliance, hitCompliance]
+
+    def measure(self,v=False):
+        """
+        note that ascii data format is of the following format:
+        V, I, R, t, status
+        """
+        self.initiate()
+        return self.get(v)
+
+    def set_trigger(self, arm, trigger, v=False):
+        """
+        see page 210 of manual for trigger model diagram
+
+        """
+        self.send(":arm:count "+str(arm)) # number of sets of triggered data
+        self.send(":trigger:count "+str(trigger)) #number of triggers per arm
+
+
 
     def close(self):
         self.ser.close()
@@ -92,6 +128,9 @@ class MyTest(unittest.TestCase):
     def test_source(self):
         self.smu.set_source("voltage", "fixed","minimum","0.1")
         self.assertEqual(self.smu.check_source(), ['VOLT', 'FIX', '0.21', '1.000000E-01'])
+    def test_sense(self):
+        self.smu.set_sense("current", "1E-6","1E-3")
+        self.assertEqual(self.smu.check_sense(), ['"CURR:DC"', '1.050000E-06', '1.000000E-03', False])
     def tearDown(self):
         self.smu.close()
 
