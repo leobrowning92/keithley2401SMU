@@ -1,10 +1,15 @@
 import serial, time, os, unittest
-import numpy,pandas as np,pd
+import numpy as np
 
 class Keithley2401(object):
-    def __init__(self):
+    """
+    Class that allows serial control of a Keithley2401 source measure
+    unit (SMU) using SCPI (Standard Commands for Programmable Instruments)
+    protocalls.
+    """
+    def __init__(self,port='/dev/ttyUSB0' ):
         self.ser = serial.Serial(
-            port='/dev/ttyUSB0',
+            port=port,
             baudrate=9600,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -12,7 +17,7 @@ class Keithley2401(object):
             timeout=3
         )
 
-    def check_Keithley2400(self,v=False):
+    def check_Keithley2401(self,v=False):
         isOpen=self.ser.isOpen()
         self.ser.write(b"*IDN?\r")
         time.sleep(0.1)
@@ -34,18 +39,18 @@ class Keithley2401(object):
         return out.decode("utf-8").rstrip()
     def call_response(self,message,v=False):
         self.send(message)
+        # could be updated with a querry for when the machine is ready
         time.sleep(0.1)
         return self.get()
     def get_data(self,v=False):
-        d = self.fetch()
-        n=int(len(d.split(','))/5) # should equal arm x trigger
-        data=np.reshape(np.array( [float(x) for x in d.split(',')] ) , (n,5))
-        df = pd.DataFrame(dn,columns=["V", "I", "R", "t", "status"])
-        df.R=df.V/df.I
+        data = self.fetch()
+        n=int(len(data.split(','))/5) # should equal arm x trigger
+        data=np.array( [float(x) for x in data.split(',')] )
+        data=np.reshape(data , (n,5))
+        data[:,2]=data[:,0]/data[:,1]
         if v:
-            print(df)
-        self.last_data=df
-        return df
+            print(data)
+        return data
 
 
     # simplifications of simple commands that would be sent to the smu
@@ -71,13 +76,23 @@ class Keithley2401(object):
         sourceMode = self.call_response(":source:voltage:mode?",v)
         sourceRange = self.call_response(":source:voltage:range?",v)
         sourceAmplitude = self.call_response(":source:voltage:level?",v)
+        if v:
+            print("Sourcing : ",sourceType)
+            print("Mode : ",sourceMode)
+            print("Range : ",sourceRange)
+            print("Value : ",sourceAmplitude)
         return [sourceType,sourceMode,sourceRange,sourceAmplitude]
 
-    def set_sense(self,senseType,senseRange,senseCompliance,v=False):
-        assert float(senseCompliance) >= float(senseRange), "your range is beyond your compliance range"
+    def set_sense(self, senseType, senseRange, senseCompliance, v=False):
+
         self.send(":sense:function '"+senseType+"'")
         self.send(":sense:"+senseType+":protection "+senseCompliance)
-        self.send(":sense:"+senseType+":range "+senseRange)
+
+        if senseRange=="auto":
+            self.send(":sense:"+senseType+":range:auto on")
+        else:
+            self.send(":sense:"+senseType+":range "+senseRange)
+            assert float(senseCompliance) >= float(senseRange), "your range is beyond your compliance range"
 
     def check_sense(self,v=False):
         # to check which function is being measured
@@ -92,6 +107,10 @@ class Keithley2401(object):
         else:
             hitCompliance = False
         assert hitCompliance == False , "Compliance hit!"
+        if v:
+            print("Sensing : ",senseType)
+            print("Range : ",senseRange)
+            print("Compliance : ",senseCompliance)
 
         return [senseType, senseRange, senseCompliance, hitCompliance]
 
@@ -101,7 +120,7 @@ class Keithley2401(object):
         V, I, R, t, status
         """
         self.initiate()
-        return self.get(v)
+        return self.get_data(v)
 
     def set_trigger(self, arm, trigger, v=False):
         """
@@ -122,7 +141,7 @@ class MyTest(unittest.TestCase):
     def test_trivial(self):
         self.assertTrue(True)
     def test_ID(self):
-        check = self.smu.check_Keithley2400()
+        check = self.smu.check_Keithley2401()
         self.assertTrue(check[0])
         self.assertEqual(check[1],'KEITHLEY INSTRUMENTS INC.,MODEL 2401,4095154,A01 Aug 25 2011 12:57:43/A02  /T/K')
     def test_source(self):
