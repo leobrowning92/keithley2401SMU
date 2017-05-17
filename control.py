@@ -1,6 +1,10 @@
 import serial, time, os, unittest
 import numpy as np
-
+def data_to_array(data,points):
+    n=int(len(data.split(','))/points) # should equal arm x trigger
+    data=np.array( [float(x) for x in data.split(',')] )
+    data=np.reshape(data , (points,n))
+    return data
 class Keithley2401(object):
     """
     Class that allows serial control of a Keithley2401 source measure
@@ -37,17 +41,27 @@ class Keithley2401(object):
         if v:
             print(out.decode("utf-8").rstrip() )
         return out.decode("utf-8").rstrip()
-    def call_response(self,message,v=False):
+    def ask(self,message,v=False):
         self.send(message)
         # could be updated with a querry for when the machine is ready
         time.sleep(0.1)
         return self.get()
+
     def get_data(self,v=False):
+        """note that ascii data format is of the following format:
+        V, I, R, t, status"""
         data = self.fetch()
-        n=int(len(data.split(','))/5) # should equal arm x trigger
-        data=np.array( [float(x) for x in data.split(',')] )
-        data=np.reshape(data , (n,5))
-        data[:,2]=data[:,0]/data[:,1]
+        data=data_to_array(data)
+        if v:
+            print(data)
+        return data
+    def trigger_collect(self,v=False):
+        """
+        note that ascii data format is of the following format:
+        V, I, R, t, status
+        """
+        data=self.ask(":read?")
+        data=data_to_array(data)
         if v:
             print(data)
         return data
@@ -57,7 +71,7 @@ class Keithley2401(object):
     def initiate(self):
         self.send(":initiate")
     def fetch(self):
-        return self.call_response(":fetch?")
+        return self.ask(":fetch?")
 
 
     # direct smu interaction functions. deal with related commands
@@ -72,10 +86,10 @@ class Keithley2401(object):
         self.send(":source:voltage:level:immediate:amplitude " + sourceAmplitude,v)
 
     def check_source(self,v=False):
-        sourceType = self.call_response(":source:function:mode?",v)
-        sourceMode = self.call_response(":source:voltage:mode?",v)
-        sourceRange = self.call_response(":source:voltage:range?",v)
-        sourceAmplitude = self.call_response(":source:voltage:level?",v)
+        sourceType = self.ask(":source:function:mode?",v)
+        sourceMode = self.ask(":source:voltage:mode?",v)
+        sourceRange = self.ask(":source:voltage:range?",v)
+        sourceAmplitude = self.ask(":source:voltage:level?",v)
         if v:
             print("Sourcing : ",sourceType)
             print("Mode : ",sourceMode)
@@ -96,12 +110,12 @@ class Keithley2401(object):
 
     def check_sense(self,v=False):
         # to check which function is being measured
-        senseType = self.call_response(":sense:function:on?")
+        senseType = self.ask(":sense:function:on?")
         # determines the range
-        senseRange = self.call_response(":sense:current:range?")
+        senseRange = self.ask(":sense:current:range?")
         #puts an upper limit on the range
-        senseCompliance = self.call_response("sense:current:protection?")
-        hitCompliance = self.call_response("sense:current:protection:tripped?")
+        senseCompliance = self.ask("sense:current:protection?")
+        hitCompliance = self.ask("sense:current:protection:tripped?")
         if hitCompliance == "1":
             hitCompliance = True
         else:
@@ -114,13 +128,7 @@ class Keithley2401(object):
 
         return [senseType, senseRange, senseCompliance, hitCompliance]
 
-    def measure(self,v=False):
-        """
-        note that ascii data format is of the following format:
-        V, I, R, t, status
-        """
-        self.initiate()
-        return self.get_data(v)
+
 
     def set_trigger(self, arm, trigger, v=False):
         """
@@ -130,10 +138,21 @@ class Keithley2401(object):
         self.send(":arm:count "+str(arm)) # number of sets of triggered data
         self.send(":trigger:count "+str(trigger)) #number of triggers per arm
 
-
-
     def close(self):
         self.ser.close()
+
+
+    # functions for specific measurements
+    def setup_slow_resistance(self,v=False):
+        self.check_Keithley2401(v=True)
+        self.set_source("voltage", "fixed", "minimum", "0.01")
+        self.set_sense("current", "auto", "1e-3")
+        self.set_trigger(1,1)
+        self.send(":format:elements voltage, current, time")
+        self.send(":source:clear:auto on")
+        if v:
+            self.check_source(v=True)
+            self.check_sense(v=True)
 
 class MyTest(unittest.TestCase):
     def setUp(self):
